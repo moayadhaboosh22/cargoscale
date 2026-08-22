@@ -300,7 +300,10 @@ export default function FreightQuotationPage() {
   };
 
   const smartRec = getSmartRecommendation();
-  const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const [todayStr, setTodayStr] = useState('');
+  useEffect(() => {
+    setTodayStr(new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }));
+  }, []);
 
   const handleSaveAnalysis = () => {
     const record: SavedShipmentRecord = {
@@ -480,6 +483,16 @@ export default function FreightQuotationPage() {
       </div>
 
       <main className="no-print" style={{ padding: '20px', fontFamily: 'Arial, sans-serif', maxWidth: '1050px', margin: '0 auto', background: '#f1f5f9', color: '#1e293b', direction: 'ltr' }}>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+          <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'linear-gradient(135deg, #2563eb, #16a34a)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold', fontSize: '16px' }}>
+            CS
+          </div>
+          <div>
+            <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#1e293b' }}>CargoScale</h1>
+            <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>Logistics Decision Assistant</p>
+          </div>
+        </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', background: '#ffffff', padding: '15px 20px', borderRadius: '6px', border: '1px solid #cbd5e1', flexWrap: 'wrap', gap: '10px' }}>
           <div style={{ width: '30%', minWidth: '200px' }}>
