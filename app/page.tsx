@@ -56,10 +56,20 @@ export default function HomePage() {
             </div>
           </Link>
 
+          <Link
+            href="/tools/cbm-calculator"
+            style={{ display: 'block', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '20px', textDecoration: 'none', color: 'inherit' }}
+          >
+            <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#1e293b', marginBottom: '6px' }}>CBM Calculator</div>
+            <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.5' }}>
+              Quickly calculate the total volume (CBM) of your shipment.
+            </div>
+          </Link>
+
           <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '8px', padding: '20px' }}>
             <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#94a3b8', marginBottom: '6px' }}>More Tools</div>
             <div style={{ fontSize: '13px', color: '#94a3b8', lineHeight: '1.5' }}>
-              CBM Calculator, Chargeable Weight Calculator, and Unit Converter are coming soon.
+              Chargeable Weight Calculator and Unit Converter are coming soon.
             </div>
           </div>
         </div>
