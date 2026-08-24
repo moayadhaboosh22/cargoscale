@@ -531,7 +531,7 @@ export default function FreightQuotationPage() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '12px 15px', marginBottom: '15px' }}>
+        <div className="top-summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '12px 15px', marginBottom: '15px' }}>
           <div>
             <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 'bold', marginBottom: '2px' }}>Shipment</div>
             <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{shipmentTitle}</div>
@@ -634,6 +634,7 @@ export default function FreightQuotationPage() {
             <span style={{ fontWeight: 'bold', fontSize: '13px', color: '#1e293b' }}>Packing List Items ({freightMode})</span>
             <button onClick={handleAddPackage} style={{ background: '#2563eb', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}>+ Add Item</button>
           </div>
+          <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
             <thead>
               <tr style={{ background: '#f8fafc', color: '#475569' }}>
@@ -674,6 +675,7 @@ export default function FreightQuotationPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>

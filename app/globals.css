@@ -42,3 +42,8 @@ body {
     margin: 15mm;
   }
 }
+@media (max-width: 480px) {
+  .top-summary-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
