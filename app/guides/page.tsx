@@ -1,12 +1,16 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: 'Logistics Guides | CargoScale',
   description: 'Practical guides on shipping, freight terms, container types, and logistics calculations to help you make informed shipping decisions.',
 };
 
+const publishedGuides = [
+  { title: 'What is CBM & How to Calculate It', description: 'Understand cubic meters and how shipment volume is calculated.', href: '/guides/cbm-explained' },
+];
+
 const upcomingGuides = [
-  { title: 'What is CBM & How to Calculate It', description: 'Understand cubic meters and how shipment volume is calculated.' },
   { title: 'LCL vs FCL — Which One Do You Need?', description: 'Compare less-than-container-load and full-container-load shipping.' },
   { title: 'Incoterms Explained Simply', description: 'A clear breakdown of who is responsible for what, and when.' },
   { title: 'Container Guide (20GP / 40GP / 40HC)', description: 'Dimensions, capacities, and when to use each container type.' },
@@ -33,6 +37,12 @@ export default function GuidesPage() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
+        {publishedGuides.map((guide) => (
+          <Link key={guide.title} href={guide.href} style={{ display: 'block', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '18px', textDecoration: 'none', color: 'inherit' }}>
+            <div style={{ fontSize: '15px', fontWeight: 'bold', color: '#1e293b', marginBottom: '8px' }}>{guide.title}</div>
+            <div style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.5' }}>{guide.description}</div>
+          </Link>
+        ))}
         {upcomingGuides.map((guide) => (
           <div key={guide.title} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '18px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px', gap: '8px' }}>
