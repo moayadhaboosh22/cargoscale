@@ -1,3 +1,9 @@
+// KNOWN ISSUE (Phase 4, not resolved): the main white card on this page renders
+// narrower than on cbm-calculator/chargeable-weight pages despite identical
+// maxWidth (600px) and width:100% on the card itself. Root cause not identified
+// after diff comparison + browser inspection (computed width showed 390px in
+// one test, unclear if device-toolbar related). Not a functional issue, no
+// horizontal scroll, all calculations correct. Revisit later.
 'use client';
 import React, { useState } from 'react';
 import { convertToMeters, convertToKg } from '../../../lib/engine/units';
@@ -55,12 +61,12 @@ export default function UnitConverterPage() {
         </div>
       </div>
 
-      <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '20px', marginBottom: '15px' }}>
+      <div style={{ width: '100%', boxSizing: 'border-box', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '20px', marginBottom: '15px' }}>
         <h2 style={{ fontSize: '16px', margin: '0 0 16px 0' }}>Unit Converter</h2>
 
         <div style={{ marginBottom: '16px' }}>
           <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '4px' }}>Conversion Type</label>
-          <div style={{ display: 'flex', gap: '5px' }}>
+          <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
             {(['length', 'weight', 'volume'] as ConversionType[]).map(type => (
               <button
                 key={type}
