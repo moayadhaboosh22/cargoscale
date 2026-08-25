@@ -8,10 +8,10 @@ export const metadata: Metadata = {
 
 const publishedGuides = [
   { title: 'What is CBM & How to Calculate It', description: 'Understand cubic meters and how shipment volume is calculated.', href: '/guides/cbm-explained' },
+  { title: 'LCL vs FCL — Which One Do You Need?', description: 'Compare less-than-container-load and full-container-load shipping.', href: '/guides/lcl-vs-fcl' },
 ];
 
 const upcomingGuides = [
-  { title: 'LCL vs FCL — Which One Do You Need?', description: 'Compare less-than-container-load and full-container-load shipping.' },
   { title: 'Incoterms Explained Simply', description: 'A clear breakdown of who is responsible for what, and when.' },
   { title: 'Container Guide (20GP / 40GP / 40HC)', description: 'Dimensions, capacities, and when to use each container type.' },
   { title: 'Air Freight Chargeable Weight Explained', description: 'Why air freight cost depends on both weight and volume.' },
