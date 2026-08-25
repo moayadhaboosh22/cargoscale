@@ -11,11 +11,10 @@ const publishedGuides = [
   { title: 'LCL vs FCL — Which One Do You Need?', description: 'Compare less-than-container-load and full-container-load shipping.', href: '/guides/lcl-vs-fcl' },
   { title: 'Air Freight Chargeable Weight Explained', description: 'Why air freight cost depends on both weight and volume.', href: '/guides/air-freight-chargeable-weight' },
   { title: 'Incoterms Explained Simply', description: 'A clear breakdown of who is responsible for what, and when.', href: '/guides/incoterms-explained' },
+  { title: 'Container Guide (20GP / 40GP / 40HC)', description: 'Dimensions, capacities, and when to use each container type.', href: '/guides/container-guide' },
 ];
 
-const upcomingGuides = [
-  { title: 'Container Guide (20GP / 40GP / 40HC)', description: 'Dimensions, capacities, and when to use each container type.' },
-];
+const upcomingGuides: { title: string; description: string }[] = [];
 
 export default function GuidesPage() {
   return (
