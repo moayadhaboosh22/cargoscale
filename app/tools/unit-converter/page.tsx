@@ -1,5 +1,6 @@
 'use client';
 import React, { useState } from 'react';
+import FeedbackWidget from '../../../components/FeedbackWidget';
 import { convertToMeters, convertToKg } from '../../../lib/engine/units';
 import { calculateCFT } from '../../../lib/engine/cbm';
 
@@ -145,6 +146,9 @@ export default function UnitConverterPage() {
 
       <div style={{ textAlign: 'center' }}>
         <a href="/" style={{ fontSize: '13px', color: '#2563eb', textDecoration: 'none' }}>&larr; Back to CargoScale</a>
+        <div style={{ marginTop: '8px' }}>
+          <FeedbackWidget />
+        </div>
       </div>
 
     </main>

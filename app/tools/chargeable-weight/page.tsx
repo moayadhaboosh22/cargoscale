@@ -1,5 +1,6 @@
 'use client';
 import React, { useState } from 'react';
+import FeedbackWidget from '../../../components/FeedbackWidget';
 import { convertToMeters } from '../../../lib/engine/units';
 import { calculateChargeableWeight } from '../../../lib/engine/chargeable';
 
@@ -90,6 +91,9 @@ export default function ChargeableWeightPage() {
 
       <div style={{ textAlign: 'center' }}>
         <a href="/" style={{ fontSize: '13px', color: '#2563eb', textDecoration: 'none' }}>&larr; Back to CargoScale</a>
+        <div style={{ marginTop: '8px' }}>
+          <FeedbackWidget />
+        </div>
       </div>
 
     </main>

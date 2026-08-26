@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
+import FeedbackWidget from '../../../components/FeedbackWidget';
 import { PackageInput as EnginePackageInput, CostBreakdown, FreightModeSimple } from '../../../lib/types/shipment';
 import { calculateCargoSummary } from '../../../lib/engine/cbm';
 import { normalizePackage } from '../../../lib/engine/units';
@@ -771,6 +772,9 @@ export default function FreightQuotationPage() {
           </div>
         )}
 
+        <div style={{ textAlign: 'center', marginTop: '20px' }}>
+          <FeedbackWidget />
+        </div>
       </main>
     </div>
   );

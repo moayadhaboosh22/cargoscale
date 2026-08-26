@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import FeedbackWidget from '../components/FeedbackWidget';
 
 export default function HomePage() {
   return (
@@ -92,6 +93,9 @@ export default function HomePage() {
       <footer style={{ borderTop: '1px solid #e2e8f0', padding: '20px', textAlign: 'center', fontSize: '12px', color: '#94a3b8' }}>
         <Link href="/guides" style={{ color: '#2563eb', textDecoration: 'none', marginRight: '12px' }}>Guides</Link>
         CargoScale — Logistics Decision Assistant
+        <div style={{ marginTop: '8px' }}>
+          <FeedbackWidget />
+        </div>
       </footer>
 
     </main>

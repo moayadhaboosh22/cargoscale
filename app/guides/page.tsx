@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import FeedbackWidget from '../../components/FeedbackWidget';
 
 export const metadata: Metadata = {
   title: 'Logistics Guides | CargoScale',
@@ -55,6 +56,9 @@ export default function GuidesPage() {
 
       <div style={{ textAlign: 'center', marginTop: '32px' }}>
         <a href="/" style={{ fontSize: '13px', color: '#2563eb', textDecoration: 'none' }}>&larr; Back to CargoScale</a>
+        <div style={{ marginTop: '8px' }}>
+          <FeedbackWidget />
+        </div>
       </div>
 
     </main>

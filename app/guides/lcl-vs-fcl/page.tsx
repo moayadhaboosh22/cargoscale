@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import FeedbackWidget from '../../../components/FeedbackWidget';
 
 export const metadata: Metadata = {
   title: 'LCL vs FCL — Which One Do You Need? | CargoScale',
@@ -61,6 +62,9 @@ export default function LclVsFclPage() {
 
       <div style={{ textAlign: 'center', marginTop: '24px' }}>
         <Link href="/guides" style={{ fontSize: '13px', color: '#2563eb', textDecoration: 'none' }}>&larr; Back to Guides</Link>
+        <div style={{ marginTop: '8px' }}>
+          <FeedbackWidget />
+        </div>
       </div>
 
     </main>

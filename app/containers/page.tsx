@@ -1,5 +1,6 @@
 'use client';
 import React from 'react';
+import FeedbackWidget from '../../components/FeedbackWidget';
 import { CONTAINER_SPECS, getAllContainerTypes } from '../../lib/reference/containers';
 
 export default function ContainerSpecsPage() {
@@ -120,6 +121,9 @@ export default function ContainerSpecsPage() {
         These are standard reference dimensions and may vary slightly by manufacturer, container age, and shipping line. Always confirm exact specifications with your carrier for critical loading decisions.
       </div>
 
+      <div style={{ textAlign: 'center', marginTop: '20px' }}>
+        <FeedbackWidget />
+      </div>
     </main>
   );
 }
