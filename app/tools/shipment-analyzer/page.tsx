@@ -1,11 +1,14 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { PackageInput as EnginePackageInput, CostBreakdown } from '../../../lib/types/shipment';
+import { PackageInput as EnginePackageInput, CostBreakdown, FreightModeSimple } from '../../../lib/types/shipment';
 import { calculateCargoSummary } from '../../../lib/engine/cbm';
 import { normalizePackage } from '../../../lib/engine/units';
 import { calculateVolumetricWeight, calculateRevenueTon } from '../../../lib/engine/chargeable';
 import { calculateFclFreightCost, calculateLclFreightCost } from '../../../lib/engine/rates';
-import { compareLclVsFcl } from '../../../lib/engine/comparison';
+import { recommendContainerMix } from '../../../lib/engine/container-mix';
+import { buildRecommendation } from '../../../lib/engine/recommendation';
+import { validatePackages, isNegativeRate } from '../../../lib/engine/validation';
+import { getContainerSpec } from '../../../lib/reference/containers';
 
 type ContainerType = '20GP' | '40GP' | '40HC' | 'AUTO';
 
@@ -30,21 +33,15 @@ interface SavedShipmentRecord {
   containerSelection: ContainerType;
   airDivisor: number;
   packages: PackageInput[];
-  rate20GP: number;
-  rate40GP: number;
-  rate40HC: number;
-  rateLCL: number;
+  rate20GP: number | null;
+  rate40GP: number | null;
+  rate40HC: number | null;
+  rateLCL: number | null;
   minimumRT: number;
   originCharges: number;
   destCharges: number;
   currency: string;
 }
-
-const CONTAINER_SPECS: Record<Exclude<ContainerType, 'AUTO'>, { maxCBM: number; maxWeightKg: number; name: string }> = {
-  '20GP': { maxCBM: 28, maxWeightKg: 21800, name: "20' General Purpose (20GP)" },
-  '40GP': { maxCBM: 58, maxWeightKg: 26500, name: "40' General Purpose (40GP)" },
-  '40HC': { maxCBM: 68, maxWeightKg: 28500, name: "40' High Cube (40HC)" }
-};
 
 const STORAGE_KEY = 'cargoShipmentsList';
 
@@ -61,17 +58,17 @@ export default function FreightQuotationPage() {
   const [airDivisor, setAirDivisor] = useState<number>(6000);
 
   const [packages, setPackages] = useState<PackageInput[]>([
-    { id: '1', quantity: 10, length: 60, width: 40, height: 50, dimUnit: 'cm', weightPerUnit: 15, weightUnit: 'kg' }
+    { id: '1', quantity: 0, length: 0, width: 0, height: 0, dimUnit: 'cm', weightPerUnit: 0, weightUnit: 'kg' }
   ]);
 
-  const [rate20GP, setRate20GP] = useState<number>(950);
-  const [rate40GP, setRate40GP] = useState<number>(1200);
-  const [rate40HC, setRate40HC] = useState<number>(1350);
-  const [rateLCL, setRateLCL] = useState<number>(50);
+  const [rate20GP, setRate20GP] = useState<number | null>(null);
+  const [rate40GP, setRate40GP] = useState<number | null>(null);
+  const [rate40HC, setRate40HC] = useState<number | null>(null);
+  const [rateLCL, setRateLCL] = useState<number | null>(null);
   const [minimumRT, setMinimumRT] = useState<number>(1);
 
-  const [originCharges, setOriginCharges] = useState<number>(250);
-  const [destCharges, setDestCharges] = useState<number>(300);
+  const [originCharges, setOriginCharges] = useState<number>(0);
+  const [destCharges, setDestCharges] = useState<number>(0);
   const [currency, setCurrency] = useState('USD');
 
   const [showComparison, setShowComparison] = useState(false);
@@ -92,12 +89,12 @@ export default function FreightQuotationPage() {
   const handleAddPackage = () => {
     const newItem: PackageInput = {
       id: Date.now().toString(),
-      quantity: 1,
-      length: 50,
-      width: 50,
-      height: 50,
+      quantity: 0,
+      length: 0,
+      width: 0,
+      height: 0,
       dimUnit: 'cm',
-      weightPerUnit: 10,
+      weightPerUnit: 0,
       weightUnit: 'kg'
     };
     setPackages([...packages, newItem]);
@@ -126,9 +123,12 @@ export default function FreightQuotationPage() {
   }));
 
   const cargoSummary = calculateCargoSummary(enginePackages);
+  const normalizedPackages = enginePackages.map(normalizePackage);
+  const hasCargo = cargoSummary.totalPackages > 0;
 
   const totalCBM = cargoSummary.totalCBM;
   const totalGrossWeightKg = cargoSummary.totalGrossWeightKg;
+  const cargoDensity = totalCBM > 0 ? totalGrossWeightKg / totalCBM : 0;
 
   const totalVolumetricWeightKg = enginePackages.reduce((sum, pkg) => {
     const normalized = normalizePackage(pkg);
@@ -141,167 +141,116 @@ export default function FreightQuotationPage() {
 
   const volumetricWeightKg = totalVolumetricWeightKg;
   const chargeableWeightKg = Math.max(totalGrossWeightKg, volumetricWeightKg);
-  const cargoDensity = totalCBM > 0 ? totalGrossWeightKg / totalCBM : 0;
 
   const revenueTonResult = calculateRevenueTon(totalCBM, totalGrossWeightKg);
 
-  const lclFreightCost = calculateLclFreightCost(revenueTonResult.chargeableRT, {
-    ratePerRT: rateLCL,
-    minimumRT: minimumRT,
-    originCharges: 0,
-    destinationCharges: 0,
-    additionalCharges: 0,
-    currency,
-  });
+  const containerMix = recommendContainerMix(cargoSummary, normalizedPackages);
 
-  const recommendedContainer: Exclude<ContainerType, 'AUTO'> = totalCBM > 58 ? '40HC' : totalCBM > 28 ? '40GP' : '20GP';
-  const activeContainerType = containerSelection === 'AUTO' ? recommendedContainer : containerSelection;
-  const activeSpec = CONTAINER_SPECS[activeContainerType];
+  const activeContainerType: Exclude<ContainerType, 'AUTO'> =
+    containerSelection === 'AUTO'
+      ? (containerMix.feasible && containerMix.lines.length > 0 ? containerMix.lines[0].type : '20GP')
+      : containerSelection;
+  const activeSpec = getContainerSpec(activeContainerType);
 
-  const calculateSmartMix = (cbm: number, weight: number) => {
-    let remainingCBM = cbm;
-    let remainingWeight = weight;
-
-    let count40HC = 0;
-    let count40GP = 0;
-    let count20GP = 0;
-
-    while (remainingCBM > CONTAINER_SPECS['40HC'].maxCBM || remainingWeight > CONTAINER_SPECS['40HC'].maxWeightKg) {
-      if (remainingCBM >= 40) {
-        count40HC++;
-        remainingCBM = Math.max(0, remainingCBM - CONTAINER_SPECS['40HC'].maxCBM);
-        remainingWeight = Math.max(0, remainingWeight - CONTAINER_SPECS['40HC'].maxWeightKg);
-      } else {
-        break;
-      }
-    }
-
-    if (remainingCBM > 0 || remainingWeight > 0) {
-      if (remainingCBM > 50 || remainingWeight > 24000) {
-        count40HC++;
-      } else if (remainingCBM > 25 || remainingWeight > 18000) {
-        count40GP++;
-      } else {
-        count20GP++;
-      }
-    }
-
-    if (cbm <= 0 && weight <= 0) {
-      return { mixText: '0 Units', totalBaseFreight: 0, units: { '40HC': 0, '40GP': 0, '20GP': 0 }, totalUnits: 0 };
-    }
-
-    if (count40HC === 0 && count40GP === 0 && count20GP === 0) {
-      count20GP = 1;
-    }
-
-    let parts = [];
-    if (count40HC > 0) parts.push(count40HC + 'x 40HC');
-    if (count40GP > 0) parts.push(count40GP + 'x 40GP');
-    if (count20GP > 0) parts.push(count20GP + 'x 20GP');
-
-    const zeroCharges = { originCharges: 0, destinationCharges: 0, additionalCharges: 0, currency };
-
-    const freight40HC = count40HC > 0
-      ? calculateFclFreightCost({ containerFlatRate: rate40HC, numberOfContainers: count40HC, ...zeroCharges }).baseFreight
-      : 0;
-    const freight40GP = count40GP > 0
-      ? calculateFclFreightCost({ containerFlatRate: rate40GP, numberOfContainers: count40GP, ...zeroCharges }).baseFreight
-      : 0;
-    const freight20GP = count20GP > 0
-      ? calculateFclFreightCost({ containerFlatRate: rate20GP, numberOfContainers: count20GP, ...zeroCharges }).baseFreight
-      : 0;
-
-    const totalBaseFreight = freight40HC + freight40GP + freight20GP;
-    const totalUnits = count40HC + count40GP + count20GP;
-
-    return {
-      mixText: parts.join(' + '),
-      totalBaseFreight,
-      units: { '40HC': count40HC, '40GP': count40GP, '20GP': count20GP },
-      totalUnits
-    };
-  };
-
-  const smartMixResult = calculateSmartMix(totalCBM, totalGrossWeightKg);
-
-  const singleContainersByCBM = totalCBM > 0 ? Math.ceil(totalCBM / activeSpec.maxCBM) : 1;
-  const singleContainersByWeight = totalGrossWeightKg > 0 ? Math.ceil(totalGrossWeightKg / activeSpec.maxWeightKg) : 1;
+  const singleContainersByCBM = totalCBM > 0 ? Math.ceil(totalCBM / activeSpec.usableVolumeM3) : 0;
+  const singleContainersByWeight = totalGrossWeightKg > 0 ? Math.ceil(totalGrossWeightKg / activeSpec.payloadKg) : 0;
   const requiredContainers = Math.max(1, singleContainersByCBM, singleContainersByWeight);
 
-  const manualRate = activeContainerType === '20GP' ? rate20GP : activeContainerType === '40GP' ? rate40GP : rate40HC;
+  const mixText = containerSelection === 'AUTO'
+    ? (containerMix.feasible ? containerMix.lines.map(l => l.count + 'x ' + l.type).join(' + ') : 'No suitable container')
+    : (activeContainerType + ' x ' + requiredContainers);
 
-  const manualFreightCost = calculateFclFreightCost({
-    containerFlatRate: manualRate,
-    numberOfContainers: requiredContainers,
-    originCharges: 0,
-    destinationCharges: 0,
-    additionalCharges: 0,
-    currency,
-  });
-
-  const fclBaseFreight = containerSelection === 'AUTO' ? smartMixResult.totalBaseFreight : manualFreightCost.baseFreight;
-
-  const effectiveBaseFreight =
-    freightMode === 'Sea FCL'
-      ? fclBaseFreight
-      : freightMode === 'Sea LCL'
-      ? lclFreightCost.baseFreight
-      : 0;
-
-  const totalEstimatedCost = effectiveBaseFreight + originCharges + destCharges;
   const totalCapacityProvided = containerSelection === 'AUTO'
-    ? (smartMixResult.units['40HC'] * CONTAINER_SPECS['40HC'].maxCBM) + (smartMixResult.units['40GP'] * CONTAINER_SPECS['40GP'].maxCBM) + (smartMixResult.units['20GP'] * CONTAINER_SPECS['20GP'].maxCBM)
-    : activeSpec.maxCBM * requiredContainers;
-
+    ? containerMix.totalVolumeCapacityM3
+    : activeSpec.usableVolumeM3 * requiredContainers;
   const volumeUtil = totalCapacityProvided > 0 ? (totalCBM / totalCapacityProvided) * 100 : 0;
 
-  const lclCostForComparison: CostBreakdown = {
-    baseFreight: lclFreightCost.baseFreight,
-    originCharges,
-    destinationCharges: destCharges,
-    additionalCharges: 0,
-    totalEstimatedCost: lclFreightCost.baseFreight + originCharges + destCharges,
-    currency,
-  };
+  const payloadCapacityProvided = containerSelection === 'AUTO'
+    ? containerMix.totalPayloadCapacityKg
+    : activeSpec.payloadKg * requiredContainers;
+  const payloadUtil = payloadCapacityProvided > 0 ? (totalGrossWeightKg / payloadCapacityProvided) * 100 : 0;
 
-  const fclCostForComparison: CostBreakdown = {
-    baseFreight: fclBaseFreight,
-    originCharges,
-    destinationCharges: destCharges,
-    additionalCharges: 0,
-    totalEstimatedCost: fclBaseFreight + originCharges + destCharges,
-    currency,
-  };
+  const rateForType = (type: '20GP' | '40GP' | '40HC'): number | null =>
+    type === '20GP' ? rate20GP : type === '40GP' ? rate40GP : rate40HC;
 
-  const comparisonResult = compareLclVsFcl(
-    totalCBM > 0 ? lclCostForComparison : null,
-    totalCBM > 0 ? fclCostForComparison : null
-  );
-
-  const getSmartRecommendation = () => {
-    if (totalCBM <= 0) return { mode: 'Pending', reason: 'Please enter cargo dimensions.' };
-
-    if (freightMode === 'Air Freight') {
-      return {
-        mode: 'Air Freight (Express / Standard)',
-        reason: 'Volumetric weight is ' + volumetricWeightKg.toFixed(2) + ' kg, Chargeable weight is ' + chargeableWeightKg.toFixed(2) + ' kg.'
-      };
-    } else if (freightMode === 'Sea LCL') {
-      return {
-        mode: 'LCL (Less than Container Load)',
-        reason: 'Volume RT is ' + totalCBM.toFixed(2) + ', Weight RT is ' + revenueTonResult.weightRT.toFixed(2) + ', Chargeable RT is ' + revenueTonResult.chargeableRT.toFixed(2) + ' (reference rule: 1 RT = 1 CBM or 1000 KG).'
-      };
+  let fclCost: CostBreakdown | null = null;
+  if (hasCargo && freightMode === 'Sea FCL') {
+    if (containerSelection === 'AUTO') {
+      if (containerMix.feasible && containerMix.lines.length > 0) {
+        const line = containerMix.lines[0];
+        const rate = rateForType(line.type);
+        if (rate !== null) {
+          fclCost = calculateFclFreightCost({
+            containerFlatRate: rate,
+            numberOfContainers: line.count,
+            originCharges,
+            destinationCharges: destCharges,
+            additionalCharges: 0,
+            currency,
+          });
+        }
+      }
     } else {
-      return {
-        mode: containerSelection === 'AUTO' ? ('Smart Mixed FCL (' + smartMixResult.mixText + ')') : ('FCL (' + activeContainerType + ') x ' + requiredContainers + ' Unit(s)'),
-        reason: containerSelection === 'AUTO'
-          ? ('Optimized combination to fit ' + totalCBM.toFixed(1) + ' CBM and ' + totalGrossWeightKg.toFixed(1) + ' KG with minimum wasted space.')
-          : 'Fixed manual selection requirement.'
-      };
+      const rate = rateForType(activeContainerType);
+      if (rate !== null) {
+        fclCost = calculateFclFreightCost({
+          containerFlatRate: rate,
+          numberOfContainers: requiredContainers,
+          originCharges,
+          destinationCharges: destCharges,
+          additionalCharges: 0,
+          currency,
+        });
+      }
     }
-  };
+  }
 
-  const smartRec = getSmartRecommendation();
+  let lclCost: CostBreakdown | null = null;
+  if (hasCargo && rateLCL !== null) {
+    lclCost = calculateLclFreightCost(revenueTonResult.chargeableRT, {
+      ratePerRT: rateLCL,
+      minimumRT,
+      originCharges,
+      destinationCharges: destCharges,
+      additionalCharges: 0,
+      currency,
+    });
+  }
+
+  const effectiveCost: CostBreakdown | null =
+    freightMode === 'Sea FCL' ? fclCost :
+    freightMode === 'Sea LCL' ? lclCost :
+    null;
+
+  const totalEstimatedCost = effectiveCost ? effectiveCost.totalEstimatedCost : 0;
+
+  const freightModeSimple: FreightModeSimple =
+    freightMode === 'Air Freight' ? 'Air' : freightMode === 'Sea LCL' ? 'LCL' : 'FCL';
+
+  const recommendation = buildRecommendation({
+    freightMode: freightModeSimple,
+    cargoSummary,
+    chargeableWeightKg,
+    containerMix: freightModeSimple === 'FCL' ? containerMix : null,
+    lclCost,
+    fclCost,
+  });
+
+  const validationIssues = validatePackages(enginePackages);
+  const negativeRateWarnings: string[] = [];
+  if (isNegativeRate(rate20GP)) negativeRateWarnings.push('20GP rate cannot be negative.');
+  if (isNegativeRate(rate40GP)) negativeRateWarnings.push('40GP rate cannot be negative.');
+  if (isNegativeRate(rate40HC)) negativeRateWarnings.push('40HC rate cannot be negative.');
+  if (isNegativeRate(rateLCL)) negativeRateWarnings.push('LCL rate cannot be negative.');
+  if (originCharges < 0) negativeRateWarnings.push('Origin charges cannot be negative.');
+  if (destCharges < 0) negativeRateWarnings.push('Destination charges cannot be negative.');
+
+  const allWarnings = [
+    ...validationIssues.map(v => v.message),
+    ...negativeRateWarnings,
+    ...recommendation.warnings,
+  ];
+
   const [todayStr, setTodayStr] = useState('');
   useEffect(() => {
     setTodayStr(new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }));
@@ -381,14 +330,14 @@ export default function FreightQuotationPage() {
     setFreightMode('Sea FCL');
     setContainerSelection('AUTO');
     setAirDivisor(6000);
-    setPackages([{ id: '1', quantity: 10, length: 60, width: 40, height: 50, dimUnit: 'cm', weightPerUnit: 15, weightUnit: 'kg' }]);
-    setRate20GP(950);
-    setRate40GP(1200);
-    setRate40HC(1350);
-    setRateLCL(50);
+    setPackages([{ id: '1', quantity: 0, length: 0, width: 0, height: 0, dimUnit: 'cm', weightPerUnit: 0, weightUnit: 'kg' }]);
+    setRate20GP(null);
+    setRate40GP(null);
+    setRate40HC(null);
+    setRateLCL(null);
     setMinimumRT(1);
-    setOriginCharges(250);
-    setDestCharges(300);
+    setOriginCharges(0);
+    setDestCharges(0);
     setCurrency('USD');
   };
 
@@ -419,7 +368,7 @@ export default function FreightQuotationPage() {
               <td style={{ padding: '3px 0' }}>{freightMode}</td>
               <td style={{ padding: '3px 0' }}><b>Equipment:</b></td>
               <td style={{ padding: '3px 0' }}>
-                {freightMode === 'Sea FCL' ? (containerSelection === 'AUTO' ? smartMixResult.mixText : (activeContainerType + ' x ' + requiredContainers)) : 'N/A'}
+                {freightMode === 'Sea FCL' ? mixText : 'N/A'}
               </td>
             </tr>
           </tbody>
@@ -452,29 +401,34 @@ export default function FreightQuotationPage() {
             <p style={{ fontSize: '11px', margin: '3px 0' }}>Gross Weight: <b>{totalGrossWeightKg.toFixed(2)} KG</b></p>
             <p style={{ fontSize: '11px', margin: '3px 0' }}>Cargo Density: <b>{cargoDensity.toFixed(2)} KG/CBM</b></p>
             {freightMode === 'Sea LCL' && <p style={{ fontSize: '11px', margin: '3px 0' }}>Chargeable RT: <b>{revenueTonResult.chargeableRT.toFixed(2)} RT</b></p>}
-            {freightMode === 'Air Freight' && <p style={{ fontSize: '11px', margin: '3px 0' }}>Chargeable Weight: <b>{chargeableWeightKg.toFixed(2)} KG</b></p>}
+            {freightMode === 'Air Freight' && (
+              <>
+                <p style={{ fontSize: '11px', margin: '3px 0' }}>Volumetric Weight: <b>{hasCargo ? volumetricWeightKg.toFixed(2) + ' KG' : '\u2014'}</b></p>
+                <p style={{ fontSize: '11px', margin: '3px 0' }}>Chargeable Weight: <b>{hasCargo ? chargeableWeightKg.toFixed(2) + ' KG' : '\u2014'}</b></p>
+              </>
+            )}
           </div>
           <div style={{ flex: 1 }}>
             <h3 style={{ fontSize: '13px', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px', marginBottom: '8px' }}>Cost Breakdown</h3>
-            <p style={{ fontSize: '11px', margin: '3px 0' }}>Base Freight: <b>{effectiveBaseFreight.toFixed(2)} {currency}</b></p>
+            <p style={{ fontSize: '11px', margin: '3px 0' }}>Base Freight: <b>{effectiveCost ? effectiveCost.baseFreight.toFixed(2) + ' ' + currency : '\u2014'}</b></p>
             <p style={{ fontSize: '11px', margin: '3px 0' }}>Origin Charges: <b>{originCharges.toFixed(2)} {currency}</b></p>
             <p style={{ fontSize: '11px', margin: '3px 0' }}>Destination Charges: <b>{destCharges.toFixed(2)} {currency}</b></p>
             <p style={{ fontSize: '13px', margin: '6px 0 0 0', fontWeight: 'bold', borderTop: '1px solid #cbd5e1', paddingTop: '4px' }}>
-              Total Estimated: {totalEstimatedCost.toFixed(2)} {currency}
+              Total Estimated: {effectiveCost ? totalEstimatedCost.toFixed(2) + ' ' + currency : '\u2014'}
             </p>
           </div>
         </div>
 
         <h3 style={{ fontSize: '13px', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px', marginBottom: '8px' }}>Recommendation</h3>
-        <p style={{ fontSize: '11px', margin: '3px 0' }}><b>{smartRec.mode}</b></p>
-        <p style={{ fontSize: '11px', margin: '3px 0', color: '#475569' }}>{smartRec.reason}</p>
+        <p style={{ fontSize: '11px', margin: '3px 0' }}><b>{recommendation.headline}</b></p>
+        <p style={{ fontSize: '11px', margin: '3px 0', color: '#475569' }}>{recommendation.reasons.join(' ')}</p>
 
         <h3 style={{ fontSize: '13px', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px', marginBottom: '8px', marginTop: '20px' }}>Assumptions and Reference Data</h3>
         <ul style={{ fontSize: '10px', color: '#64748b', margin: 0, paddingLeft: '18px', lineHeight: '1.6' }}>
           <li>Air volumetric calculation uses a DIM factor of {airDivisor}; actual carrier-specific factors may vary.</li>
           <li>LCL Revenue Ton calculated using the reference rule: 1 RT = 1 CBM or 1000 KG; actual carrier rules may vary.</li>
           <li>Container rating rules and payload limits vary by route, equipment and carrier.</li>
-          <li>Physical container loading arrangement was not simulated (reference dimension check only).</li>
+          <li>Physical container loading arrangement was not simulated beyond per-package dimension and rotation checks.</li>
           <li>Currency conversion, taxes, duties and local charges are not included unless explicitly entered.</li>
         </ul>
 
@@ -542,11 +496,11 @@ export default function FreightQuotationPage() {
           </div>
           <div>
             <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 'bold', marginBottom: '2px' }}>{freightMode === 'Air Freight' ? 'Chargeable Weight' : 'Total Weight'}</div>
-            <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e293b' }}>{(freightMode === 'Air Freight' ? chargeableWeightKg : totalGrossWeightKg).toFixed(2)} KG</div>
+            <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e293b' }}>{hasCargo ? (freightMode === 'Air Freight' ? chargeableWeightKg : totalGrossWeightKg).toFixed(2) + ' KG' : '\u2014'}</div>
           </div>
           <div>
             <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 'bold', marginBottom: '2px' }}>Total Estimated</div>
-            <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#2563eb' }}>{totalCBM > 0 ? totalEstimatedCost.toFixed(2) + ' ' + currency : '\u2014'}</div>
+            <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#2563eb' }}>{effectiveCost ? totalEstimatedCost.toFixed(2) + ' ' + currency : '\u2014'}</div>
           </div>
         </div>
 
@@ -586,45 +540,47 @@ export default function FreightQuotationPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#334155' }}>Container Optimization:</span>
               <select value={containerSelection} onChange={e => setContainerSelection(e.target.value as ContainerType)} style={{ padding: '6px 10px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px', background: '#fff', minWidth: '260px' }}>
-                <option value="AUTO">Smart Mixed Optimization</option>
+                <option value="AUTO">Recommended Mix (Auto)</option>
                 <option value="20GP">20 foot General Purpose (Fixed)</option>
                 <option value="40GP">40 foot General Purpose (Fixed)</option>
                 <option value="40HC">40 foot High Cube (Fixed)</option>
               </select>
-              <span style={{ fontSize: '12px', color: '#d97706', fontWeight: 'bold' }}>Optimal Mix: {smartMixResult.mixText}</span>
+              <span style={{ fontSize: '12px', color: '#d97706', fontWeight: 'bold' }}>Recommended Mix: {mixText}</span>
             </div>
           )}
         </div>
 
         {showComparison && (
-          <div style={{ background: comparisonResult.recommendedOption === null ? '#f8fafc' : '#faf5ff', border: '1px solid ' + (comparisonResult.recommendedOption === null ? '#cbd5e1' : '#d8b4fe'), borderRadius: '6px', padding: '20px', marginBottom: '15px' }}>
+          <div style={{ background: (!lclCost || !fclCost) ? '#f8fafc' : '#faf5ff', border: '1px solid ' + ((!lclCost || !fclCost) ? '#cbd5e1' : '#d8b4fe'), borderRadius: '6px', padding: '20px', marginBottom: '15px' }}>
             <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#6d28d9' }}>LCL vs FCL Comparison</h4>
 
-            {comparisonResult.lclCost && comparisonResult.fclCost ? (
+            {lclCost && fclCost && recommendation.costComparison ? (
               <div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '12px' }}>
-                  <div style={{ background: '#fff', border: '2px solid ' + (comparisonResult.recommendedOption === 'LCL' ? '#7c3aed' : '#e2e8f0'), borderRadius: '6px', padding: '12px 15px' }}>
+                  <div style={{ background: '#fff', border: '2px solid ' + (recommendation.costComparison.recommendedOption === 'LCL' ? '#7c3aed' : '#e2e8f0'), borderRadius: '6px', padding: '12px 15px' }}>
                     <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>LCL Total</span>
-                    <p style={{ fontSize: '18px', fontWeight: 'bold', margin: '4px 0 0 0', color: comparisonResult.recommendedOption === 'LCL' ? '#7c3aed' : '#1e293b' }}>{comparisonResult.lclCost.totalEstimatedCost.toFixed(2)} {currency}</p>
+                    <p style={{ fontSize: '18px', fontWeight: 'bold', margin: '4px 0 0 0', color: recommendation.costComparison.recommendedOption === 'LCL' ? '#7c3aed' : '#1e293b' }}>{lclCost.totalEstimatedCost.toFixed(2)} {currency}</p>
                   </div>
-                  <div style={{ background: '#fff', border: '2px solid ' + (comparisonResult.recommendedOption === 'FCL' ? '#7c3aed' : '#e2e8f0'), borderRadius: '6px', padding: '12px 15px' }}>
+                  <div style={{ background: '#fff', border: '2px solid ' + (recommendation.costComparison.recommendedOption === 'FCL' ? '#7c3aed' : '#e2e8f0'), borderRadius: '6px', padding: '12px 15px' }}>
                     <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>FCL Total</span>
-                    <p style={{ fontSize: '18px', fontWeight: 'bold', margin: '4px 0 0 0', color: comparisonResult.recommendedOption === 'FCL' ? '#7c3aed' : '#1e293b' }}>{comparisonResult.fclCost.totalEstimatedCost.toFixed(2)} {currency}</p>
+                    <p style={{ fontSize: '18px', fontWeight: 'bold', margin: '4px 0 0 0', color: recommendation.costComparison.recommendedOption === 'FCL' ? '#7c3aed' : '#1e293b' }}>{fclCost.totalEstimatedCost.toFixed(2)} {currency}</p>
                   </div>
                 </div>
 
-                {comparisonResult.recommendedOption && (
+                {recommendation.costComparison.recommendedOption && (
                   <p style={{ fontSize: '13px', margin: '0 0 8px 0', color: '#4c1d95', fontWeight: 'bold' }}>
-                    {comparisonResult.recommendedOption} is estimated cheaper by {comparisonResult.differenceAmount ? comparisonResult.differenceAmount.toFixed(2) : '0.00'} {currency} (Confidence: {comparisonResult.strength})
+                    {recommendation.costComparison.recommendedOption} is estimated cheaper by {recommendation.costComparison.differenceAmount ? recommendation.costComparison.differenceAmount.toFixed(2) : '0.00'} {currency} (Confidence: {recommendation.costComparison.strength})
                   </p>
                 )}
 
-                {comparisonResult.reasons.map((reason, i) => (
+                {recommendation.costComparison.reasons.map((reason, i) => (
                   <p key={i} style={{ fontSize: '11px', color: '#6b7280', margin: '2px 0' }}>- {reason}</p>
                 ))}
               </div>
             ) : (
-              <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>Add packing list items to see a comparison.</p>
+              <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
+                {hasCargo ? 'Cost comparison unavailable \u2014 enter both the LCL and FCL rates.' : 'Add packing list items to see a comparison.'}
+              </p>
             )}
           </div>
         )}
@@ -651,10 +607,10 @@ export default function FreightQuotationPage() {
             <tbody>
               {packages.map((p) => (
                 <tr key={p.id}>
-                  <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}><input type="number" value={p.quantity} onChange={e => handlePackageChange(p.id, 'quantity', e.target.value)} style={{ width: '50px', padding: '4px' }} /></td>
-                  <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}><input type="number" value={p.length} onChange={e => handlePackageChange(p.id, 'length', e.target.value)} style={{ width: '60px', padding: '4px' }} /></td>
-                  <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}><input type="number" value={p.width} onChange={e => handlePackageChange(p.id, 'width', e.target.value)} style={{ width: '60px', padding: '4px' }} /></td>
-                  <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}><input type="number" value={p.height} onChange={e => handlePackageChange(p.id, 'height', e.target.value)} style={{ width: '60px', padding: '4px' }} /></td>
+                  <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}><input type="number" value={p.quantity} onChange={e => handlePackageChange(p.id, 'quantity', Number(e.target.value))} style={{ width: '50px', padding: '4px' }} /></td>
+                  <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}><input type="number" value={p.length} onChange={e => handlePackageChange(p.id, 'length', Number(e.target.value))} style={{ width: '60px', padding: '4px' }} /></td>
+                  <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}><input type="number" value={p.width} onChange={e => handlePackageChange(p.id, 'width', Number(e.target.value))} style={{ width: '60px', padding: '4px' }} /></td>
+                  <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}><input type="number" value={p.height} onChange={e => handlePackageChange(p.id, 'height', Number(e.target.value))} style={{ width: '60px', padding: '4px' }} /></td>
                   <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>
                     <select value={p.dimUnit} onChange={e => handlePackageChange(p.id, 'dimUnit', e.target.value)} style={{ padding: '4px' }}>
                       <option value="cm">cm</option>
@@ -663,7 +619,7 @@ export default function FreightQuotationPage() {
                       <option value="ft">ft</option>
                     </select>
                   </td>
-                  <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}><input type="number" value={p.weightPerUnit} onChange={e => handlePackageChange(p.id, 'weightPerUnit', e.target.value)} style={{ width: '60px', padding: '4px' }} /></td>
+                  <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}><input type="number" value={p.weightPerUnit} onChange={e => handlePackageChange(p.id, 'weightPerUnit', Number(e.target.value))} style={{ width: '60px', padding: '4px' }} /></td>
                   <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>
                     <select value={p.weightUnit} onChange={e => handlePackageChange(p.id, 'weightUnit', e.target.value)} style={{ padding: '4px' }}>
                       <option value="kg">kg</option>
@@ -688,28 +644,46 @@ export default function FreightQuotationPage() {
           </div>
 
           <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '15px 20px' }}>
-            <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#d97706' }}>Cost Breakdown</h4>
-            <p style={{ fontSize: '13px', margin: '5px 0' }}>Base Freight ({freightMode === 'Sea LCL' ? 'LCL' : smartMixResult.mixText}): <b>{effectiveBaseFreight.toFixed(2)} {currency}</b></p>
-            <p style={{ fontSize: '13px', margin: '5px 0' }}>Origin and Dest. Charges: <b>{(originCharges + destCharges).toFixed(2)} {currency}</b></p>
-            <p style={{ fontSize: '14px', margin: '8px 0 0 0', fontWeight: 'bold' }}>Total Estimated: <span style={{ color: '#2563eb' }}>{totalEstimatedCost.toFixed(2)} {currency}</span></p>
+            <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#d97706' }}>{freightMode === 'Air Freight' ? 'Chargeable Weight Breakdown' : 'Cost Breakdown'}</h4>
+            {freightMode === 'Air Freight' ? (
+              <>
+                <p style={{ fontSize: '13px', margin: '5px 0' }}>Volumetric Weight: <b>{hasCargo ? volumetricWeightKg.toFixed(2) + ' KG' : '\u2014'}</b></p>
+                <p style={{ fontSize: '15px', margin: '6px 0 2px 0', fontWeight: 'bold', color: '#2563eb' }}>
+                  Chargeable Weight: {hasCargo ? chargeableWeightKg.toFixed(2) + ' KG' : '\u2014'}
+                </p>
+                <p style={{ fontSize: '11px', margin: '0', color: '#64748b' }}>= the greater of Gross Weight and Volumetric Weight (used for Air Freight pricing)</p>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: '13px', margin: '5px 0' }}>Base Freight ({freightMode === 'Sea LCL' ? 'LCL' : mixText}): <b>{effectiveCost ? effectiveCost.baseFreight.toFixed(2) + ' ' + currency : '\u2014'}</b></p>
+                <p style={{ fontSize: '13px', margin: '5px 0' }}>Origin and Dest. Charges: <b>{(originCharges + destCharges).toFixed(2)} {currency}</b></p>
+                <p style={{ fontSize: '14px', margin: '8px 0 0 0', fontWeight: 'bold' }}>Total Estimated: <span style={{ color: '#2563eb' }}>{effectiveCost ? totalEstimatedCost.toFixed(2) + ' ' + currency : '\u2014'}</span></p>
+                {!effectiveCost && hasCargo && (
+                  <p style={{ fontSize: '11px', margin: '6px 0 0 0', color: '#b45309' }}>Cost comparison unavailable \u2014 enter the required rate.</p>
+                )}
+              </>
+            )}
           </div>
         </div>
 
         <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '15px 20px', marginBottom: '15px' }}>
-          <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#1e40af' }}>CargoScale Smart Recommendation and Analysis</h4>
-          <p style={{ fontSize: '13px', margin: '4px 0', color: '#1e3a8a' }}>Recommended Mode: <b>{smartRec.mode}</b></p>
-          <p style={{ fontSize: '12px', margin: '4px 0', color: '#475569' }}>Reasoning: {smartRec.reason}</p>
+          <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#1e40af' }}>CargoScale Recommendation and Analysis</h4>
+          <p style={{ fontSize: '13px', margin: '4px 0', color: '#1e3a8a' }}>Recommended Mode: <b>{recommendation.headline}</b></p>
+          <p style={{ fontSize: '12px', margin: '4px 0', color: '#475569' }}>Reasoning: {recommendation.reasons.join(' ')}</p>
 
-          {freightMode === 'Sea FCL' && volumeUtil > 0 && volumeUtil < 15 && (
+          {allWarnings.length > 0 && (
             <div style={{ marginTop: '10px', background: '#fffbeb', border: '1px solid #fde68a', padding: '8px 12px', borderRadius: '4px', fontSize: '12px', color: '#b45309' }}>
-              <span>Low FCL Utilization Warning: Your shipment volume ({totalCBM.toFixed(2)} CBM) only utilizes {volumeUtil.toFixed(1)}% of the container capacity. Consider switching to Sea LCL to optimize freight costs.</span>
+              {allWarnings.map((w, i) => (
+                <div key={i} style={{ margin: i > 0 ? '4px 0 0 0' : 0 }}>{w}</div>
+              ))}
             </div>
           )}
         </div>
 
+        {freightMode !== 'Air Freight' && (
         <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '15px 20px', marginBottom: '15px' }}>
           <div onClick={() => setShowRatesSection(!showRatesSection)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: showRatesSection ? '12px' : 0 }}>
-            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e293b' }}>{freightMode === 'Sea LCL' ? 'LCL Rate and Charges Configuration' : 'Mixed Container Rates and Charges Configuration'}</span>
+            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#1e293b' }}>{freightMode === 'Sea LCL' ? 'LCL Rate and Charges Configuration' : 'Container Rates and Charges Configuration'}</span>
             <span style={{ fontSize: '12px', color: '#2563eb', fontWeight: 'bold' }}>{showRatesSection ? 'Hide' : 'Show'}</span>
           </div>
 
@@ -717,7 +691,7 @@ export default function FreightQuotationPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
               <div>
                 <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '4px' }}>Rate per RT</label>
-                <input type="number" value={rateLCL} onChange={e => setRateLCL(Number(e.target.value))} style={{ width: '100%', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '4px' }} />
+                <input type="number" value={rateLCL === null ? '' : rateLCL} placeholder="Not entered" onChange={e => setRateLCL(e.target.value === '' ? null : Number(e.target.value))} style={{ width: '100%', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '4px' }} />
               </div>
               <div>
                 <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '4px' }}>Minimum RT</label>
@@ -741,15 +715,15 @@ export default function FreightQuotationPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px' }}>
               <div>
                 <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '4px' }}>20GP Rate</label>
-                <input type="number" value={rate20GP} onChange={e => setRate20GP(Number(e.target.value))} style={{ width: '100%', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '4px' }} />
+                <input type="number" value={rate20GP === null ? '' : rate20GP} placeholder="Not entered" onChange={e => setRate20GP(e.target.value === '' ? null : Number(e.target.value))} style={{ width: '100%', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '4px' }} />
               </div>
               <div>
                 <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '4px' }}>40GP Rate</label>
-                <input type="number" value={rate40GP} onChange={e => setRate40GP(Number(e.target.value))} style={{ width: '100%', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '4px' }} />
+                <input type="number" value={rate40GP === null ? '' : rate40GP} placeholder="Not entered" onChange={e => setRate40GP(e.target.value === '' ? null : Number(e.target.value))} style={{ width: '100%', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '4px' }} />
               </div>
               <div>
                 <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '4px' }}>40HC Rate</label>
-                <input type="number" value={rate40HC} onChange={e => setRate40HC(Number(e.target.value))} style={{ width: '100%', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '4px' }} />
+                <input type="number" value={rate40HC === null ? '' : rate40HC} placeholder="Not entered" onChange={e => setRate40HC(e.target.value === '' ? null : Number(e.target.value))} style={{ width: '100%', padding: '6px', border: '1px solid #cbd5e1', borderRadius: '4px' }} />
               </div>
               <div>
                 <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '4px' }}>Origin Charges</label>
@@ -767,17 +741,31 @@ export default function FreightQuotationPage() {
             </div>
           ))}
         </div>
+        )}
 
-        {freightMode === 'Sea FCL' && (
+        {freightMode === 'Sea FCL' && containerSelection === 'AUTO' && containerMix.feasible && (
           <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '15px 20px' }}>
-            <h4 style={{ margin: '0 0 12px 0', fontSize: '13px', color: '#1e293b', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>Smart Mixed Container Fit Assessment ({smartMixResult.mixText})</h4>
+            <h4 style={{ margin: '0 0 12px 0', fontSize: '13px', color: '#1e293b', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>Recommended Container Fit Assessment ({mixText})</h4>
             <div style={{ fontSize: '12px', display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-              <span>Total Volume Utilization: {totalCBM.toFixed(3)} / {totalCapacityProvided.toFixed(1)} CBM</span>
-              <span style={{ color: volumeUtil < 15 ? '#d97706' : '#16a34a', fontWeight: 'bold' }}>{volumeUtil.toFixed(1)}% Usage</span>
+              <span>Volume Utilization: {totalCBM.toFixed(3)} / {totalCapacityProvided.toFixed(1)} CBM</span>
+              <span style={{ color: volumeUtil < 15 ? '#d97706' : '#16a34a', fontWeight: 'bold' }}>{volumeUtil.toFixed(1)}%</span>
             </div>
             <div style={{ background: '#e2e8f0', height: '6px', borderRadius: '3px', marginBottom: '12px', overflow: 'hidden' }}>
               <div style={{ width: Math.min(volumeUtil, 100) + '%', background: volumeUtil < 15 ? '#f59e0b' : '#16a34a', height: '100%' }}></div>
             </div>
+            <div style={{ fontSize: '12px', display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <span>Payload Utilization: {totalGrossWeightKg.toFixed(1)} / {payloadCapacityProvided.toFixed(0)} KG</span>
+              <span style={{ color: payloadUtil > 95 ? '#dc2626' : '#16a34a', fontWeight: 'bold' }}>{payloadUtil.toFixed(1)}%</span>
+            </div>
+            <div style={{ background: '#e2e8f0', height: '6px', borderRadius: '3px', overflow: 'hidden' }}>
+              <div style={{ width: Math.min(payloadUtil, 100) + '%', background: payloadUtil > 95 ? '#dc2626' : '#16a34a', height: '100%' }}></div>
+            </div>
+          </div>
+        )}
+
+        {freightMode === 'Sea FCL' && containerSelection === 'AUTO' && !containerMix.feasible && hasCargo && (
+          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '15px 20px', fontSize: '13px', color: '#991b1b' }}>
+            {containerMix.reasons.join(' ')}
           </div>
         )}
 
