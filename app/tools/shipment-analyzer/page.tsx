@@ -533,7 +533,9 @@ export default function FreightQuotationPage() {
                 ))}
               </div>
             </div>
+            {freightMode !== 'Air Freight' && (
             <button onClick={() => setShowComparison(!showComparison)} style={{ background: showComparison ? '#7c3aed' : '#f3e8ff', color: showComparison ? '#fff' : '#7c3aed', border: '1px solid #c4b5fd', padding: '7px 14px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>{showComparison ? 'Hide' : 'Compare'} LCL vs FCL</button>
+            )}
           </div>
 
           {freightMode === 'Sea FCL' && (
@@ -550,7 +552,7 @@ export default function FreightQuotationPage() {
           )}
         </div>
 
-        {showComparison && (
+        {showComparison && freightMode !== 'Air Freight' && (
           <div style={{ background: (!lclCost || !fclCost) ? '#f8fafc' : '#faf5ff', border: '1px solid ' + ((!lclCost || !fclCost) ? '#cbd5e1' : '#d8b4fe'), borderRadius: '6px', padding: '20px', marginBottom: '15px' }}>
             <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#6d28d9' }}>LCL vs FCL Comparison</h4>
 
