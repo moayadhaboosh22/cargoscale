@@ -1,5 +1,11 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import FeedbackWidget from '../components/FeedbackWidget';
+
+export const metadata: Metadata = {
+  title: 'CargoScale — Smart Logistics Tools & Decision Assistant',
+  description: 'Free logistics tools for shipment volume (CBM), chargeable weight, container recommendations, and LCL vs FCL analysis — plus a full Shipment Analyzer for complete freight decisions.',
+};
 
 export default function HomePage() {
   return (
