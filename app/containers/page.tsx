@@ -17,7 +17,7 @@ export default function ContainerSpecsPage() {
           </p>
         </div>
         <a href="/" style={{ background: '#2563eb', color: '#fff', padding: '8px 16px', borderRadius: '4px', textDecoration: 'none', fontWeight: 'bold', fontSize: '13px' }}>
-          Back to Calculator
+          Back to CargoScale
         </a>
       </div>
 

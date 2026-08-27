@@ -158,7 +158,7 @@ export default function FreightQuotationPage() {
   const requiredContainers = Math.max(1, singleContainersByCBM, singleContainersByWeight);
 
   const mixText = containerSelection === 'AUTO'
-    ? (containerMix.feasible ? containerMix.lines.map(l => l.count + 'x ' + l.type).join(' + ') : 'No suitable container')
+    ? (containerMix.feasible ? containerMix.lines.map(l => l.count + 'x ' + l.type).join(' + ') : (hasCargo ? 'No suitable container' : 'Enter shipment details'))
     : (activeContainerType + ' x ' + requiredContainers);
 
   const totalCapacityProvided = containerSelection === 'AUTO'
