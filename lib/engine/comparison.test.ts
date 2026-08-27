@@ -38,4 +38,12 @@ describe('compareLclVsFcl', () => {
     const result = compareLclVsFcl(makeCost(1000), makeCost(1005));
     expect(result.strength).toBe('LOW');
   });
+
+  it('does not produce a fake HIGH-confidence recommendation when a cost is NaN', () => {
+    const brokenCost: CostBreakdown = { ...makeCost(0), totalEstimatedCost: NaN };
+    const result = compareLclVsFcl(brokenCost, makeCost(1000));
+    expect(result.strength).toBe('LOW');
+    expect(result.recommendedOption).toBe(null);
+    expect(result.differenceAmount).toBe(null);
+  });
 });

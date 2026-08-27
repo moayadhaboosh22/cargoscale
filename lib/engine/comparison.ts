@@ -17,6 +17,17 @@ export function compareLclVsFcl(
     };
   }
 
+  if (!Number.isFinite(lclCost.totalEstimatedCost) || !Number.isFinite(fclCost.totalEstimatedCost)) {
+    return {
+      lclCost,
+      fclCost,
+      differenceAmount: null,
+      recommendedOption: null,
+      strength: 'LOW',
+      reasons: ['Insufficient pricing data for a reliable financial comparison.'],
+    };
+  }
+
   const differenceAmount = Math.abs(lclCost.totalEstimatedCost - fclCost.totalEstimatedCost);
   const smallerTotal = Math.min(lclCost.totalEstimatedCost, fclCost.totalEstimatedCost);
   const differencePercent = smallerTotal === 0 ? 0 : (differenceAmount / smallerTotal) * 100;
