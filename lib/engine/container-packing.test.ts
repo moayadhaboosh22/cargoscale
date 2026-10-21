@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { packContainer, type PackingBox } from './container-packing';
+import { packContainer, expandPackagesToBoxes, packShipment, type PackingBox } from './container-packing';
+import type { NormalizedPackage } from '../types/shipment';
 
 const CONTAINER_20GP = { length: 590, width: 235, height: 238 };
 
@@ -82,5 +83,57 @@ describe('packContainer', () => {
     expect(result.packedBoxes.length).toBe(0);
     expect(result.unpackedBoxes.length).toBe(0);
     expect(result.floorAreaUsedPercent).toBe(0);
+  });
+});
+
+function makePackage(overrides: Partial<NormalizedPackage>): NormalizedPackage {
+  return {
+    id: 'pkg',
+    unitType: 'box',
+    quantity: 1,
+    length: 100,
+    width: 100,
+    height: 100,
+    dimUnit: 'cm',
+    weightPerUnit: 50,
+    weightUnit: 'kg',
+    stackable: true,
+    allowRotation: false,
+    lengthM: 1,
+    widthM: 1,
+    heightM: 1,
+    volumePerUnitM3: 1,
+    totalVolumeM3: 1,
+    grossWeightPerUnitKg: 50,
+    totalGrossWeightKg: 50,
+    ...overrides,
+  };
+}
+
+describe('expandPackagesToBoxes', () => {
+  it('expands a package quantity into individual boxes with unique ids', () => {
+    const packages = [makePackage({ id: 'p1', quantity: 3, lengthM: 0.5, widthM: 0.5, heightM: 0.5, grossWeightPerUnitKg: 10 })];
+    const boxes = expandPackagesToBoxes(packages);
+    expect(boxes.length).toBe(3);
+    expect(boxes.map((b) => b.id)).toEqual(['p1-1', 'p1-2', 'p1-3']);
+    expect(boxes.every((b) => b.weight === 10)).toBe(true);
+  });
+
+  it('produces no boxes for a zero-quantity package', () => {
+    const packages = [makePackage({ id: 'z', quantity: 0 })];
+    expect(expandPackagesToBoxes(packages).length).toBe(0);
+  });
+});
+
+describe('packShipment', () => {
+  it('packs a realistic shipment into a 20GP-sized container', () => {
+    const container20GP = { internalLengthM: 5.9, internalWidthM: 2.35, internalHeightM: 2.38 };
+    const packages = [
+      makePackage({ id: 'p1', quantity: 2, lengthM: 1.0, widthM: 1.0, heightM: 1.0, grossWeightPerUnitKg: 50, stackable: true }),
+      makePackage({ id: 'p2', quantity: 1, lengthM: 1.2, widthM: 0.8, heightM: 2.0, grossWeightPerUnitKg: 300, stackable: false }),
+    ];
+    const result = packShipment(packages, container20GP);
+    expect(result.feasible).toBe(true);
+    expect(result.packedBoxes.length).toBe(3);
   });
 });

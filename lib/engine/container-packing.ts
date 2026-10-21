@@ -1,3 +1,5 @@
+import type { NormalizedPackage } from '../types/shipment';
+
 export interface PackingBox {
   id: string;
   length: number;
@@ -139,4 +141,40 @@ export function packContainer(boxes: PackingBox[], container: ContainerDims): Pa
     floorAreaUsedPercent,
     feasible: unpackedBoxes.length === 0,
   };
+}
+
+export interface ShipmentContainerDims {
+  internalLengthM: number;
+  internalWidthM: number;
+  internalHeightM: number;
+}
+
+export function expandPackagesToBoxes(packages: NormalizedPackage[]): PackingBox[] {
+  const boxes: PackingBox[] = [];
+  for (const pkg of packages) {
+    const qty = Math.max(0, Math.floor(pkg.quantity));
+    for (let i = 0; i < qty; i++) {
+      boxes.push({
+        id: `${pkg.id}-${i + 1}`,
+        length: pkg.lengthM,
+        width: pkg.widthM,
+        height: pkg.heightM,
+        weight: pkg.grossWeightPerUnitKg,
+        stackable: pkg.stackable,
+      });
+    }
+  }
+  return boxes;
+}
+
+export function packShipment(
+  packages: NormalizedPackage[],
+  containerSpec: ShipmentContainerDims
+): PackingResult {
+  const boxes = expandPackagesToBoxes(packages);
+  return packContainer(boxes, {
+    length: containerSpec.internalLengthM,
+    width: containerSpec.internalWidthM,
+    height: containerSpec.internalHeightM,
+  });
 }
